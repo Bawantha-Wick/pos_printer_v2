@@ -44,24 +44,6 @@
               device.configuration.interfaces
             );
 
-            // Check if kernel driver is active and detach it if needed
-            try {
-              if (
-                device.kernelDriverActive &&
-                (await device.kernelDriverActive(0))
-              ) {
-                console.log("Kernel driver active, attempting to detach...");
-                await device.detachKernelDriver(0);
-                console.log("Kernel driver detached");
-              }
-            } catch (kernelError) {
-              console.log(
-                "Kernel driver check/detach not supported or failed:",
-                kernelError
-              );
-              // Continue anyway - this might not be supported in all browsers
-            }
-
             // Find the first available interface
             if (device.configuration.interfaces.length === 0) {
               throw new Error("No interfaces found in device configuration");
@@ -70,60 +52,39 @@
             // Try each interface until one is successfully claimed
             let interfaceClaimed = false;
             const interfaces = device.configuration.interfaces;
+            console.log("interfaces: ", interfaces);
             console.log(`Device has ${interfaces.length} interfaces`);
 
-            for (let i = 0; i < interfaces.length; i++) {
-              const interfaceNumber = interfaces[i].interfaceNumber;
-              console.log(
-                `Trying interface #${interfaceNumber} (${i + 1} of ${
-                  interfaces.length
-                })`
+            // Try claiming interface 0 (most common for printers)
+            const interfaceNumber = 0;
+            try {
+              await device.claimInterface(interfaceNumber);
+              console.log(`Successfully claimed interface ${interfaceNumber}`);
+              interfaceClaimed = true;
+            } catch (claimError) {
+              console.warn(
+                `Failed to claim interface ${interfaceNumber}:`,
+                claimError
               );
+            }
 
-              try {
-                // Try to detach kernel driver explicitly
+            // If interface 0 failed, try others
+            if (!interfaceClaimed) {
+              for (let i = 0; i < interfaces.length; i++) {
+                const interfaceNumber = interfaces[i].interfaceNumber;
                 try {
-                  if (
-                    device.kernelDriverActive &&
-                    (await device.kernelDriverActive(interfaceNumber))
-                  ) {
-                    await device.detachKernelDriver(interfaceNumber);
-                    console.log(
-                      `Kernel driver detached from interface ${interfaceNumber}`
-                    );
-                  }
-                } catch (detachError) {
+                  await device.claimInterface(interfaceNumber);
                   console.log(
-                    `Detach attempt on interface ${interfaceNumber}:`,
-                    detachError
+                    `Successfully claimed interface ${interfaceNumber}`
+                  );
+                  interfaceClaimed = true;
+                  break;
+                } catch (error) {
+                  console.warn(
+                    `Failed to claim interface ${interfaceNumber}:`,
+                    error
                   );
                 }
-
-                // Claim the interface with timeout
-                console.log(
-                  `Attempting to claim interface ${interfaceNumber}...`
-                );
-                await device.claimInterface(interfaceNumber);
-                console.log(
-                  `Successfully claimed interface ${interfaceNumber}`
-                );
-
-                // Select alternate interface if needed
-                if (interfaces[i].alternates.length > 0) {
-                  await device.selectAlternateInterface(interfaceNumber, 0);
-                  console.log(
-                    `Selected alternate interface for ${interfaceNumber}`
-                  );
-                }
-
-                interfaceClaimed = true;
-                break; // Exit the loop once an interface is claimed
-              } catch (claimError) {
-                console.warn(
-                  `Failed to claim interface ${interfaceNumber}:`,
-                  claimError
-                );
-                // Continue to the next interface
               }
             }
 
@@ -171,7 +132,7 @@
           }
 
           // ESC/POS commands for initialization and text printing
-          const commands = [
+          const commands = new Uint8Array([
             0x1b,
             0x40, // Initialize printer
             ...new TextEncoder().encode("Hello, World!\n\n\n"),
@@ -179,28 +140,26 @@
             0x56,
             0x41,
             0x10, // Cut paper (partial cut)
-          ];
+          ]);
 
-          // Get the out endpoints from the interface
+          // Find the bulk OUT endpoint (common for printers)
           const iface = device.configuration.interfaces[0];
           const endpoint = iface.alternate.endpoints.find(
-            (e) => e.direction === "out"
+            (e) => e.direction === "out" && e.type === "bulk"
           );
 
           if (!endpoint) {
             throw new Error("Out endpoint not found");
           }
 
-          await device.transferOut(
-            endpoint.endpointNumber,
-            new Uint8Array(commands)
-          );
-
+          await device.transferOut(endpoint.endpointNumber, commands);
           document.getElementById("status").textContent =
             "Test print completed.";
         } catch (error) {
           console.error("Error printing:", error);
-          document.getElementById("status").textContent = "Failed to print.";
+          document.getElementById(
+            "status"
+          ).textContent = `Print failed: ${error.message}`;
         }
       });
     </script>
