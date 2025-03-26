@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebUSB Printer</title>
+  </head>
+  <body>
+    <h1>WebUSB Printer Test</h1>
+    <button id="connect">Connect to Printer</button>
+    <button id="print" disabled>Print Test Message</button>
+    <p id="status"></p>
+
+    <script>
+      let device;
+
+      document.getElementById("connect").addEventListener("click", async () => {
+        try {
+          // Check WebUSB support
+          if (!navigator.usb) {
+            document.getElementById("status").textContent =
+              "WebUSB not supported by this browser.";
+            return;
+          }
+
+          // Request a USB device with specific vendor and product IDs
+          device = await navigator.usb.requestDevice({
+            filters: [{ vendorId: 0x04b8, productId: 0x0202 }], // Epson printer
+          });
+          console.log("Device selected:", device);
+
+          try {
+            // Open the device
+            await device.open();
+            console.log("Device opened successfully");
+
+            if (device.configuration === null) {
+              await device.selectConfiguration(1);
+            }
+
+            // Log available interfaces for debugging
+            console.log(
+              "Available interfaces:",
+              device.configuration.interfaces
+            );
+
+            // Check if kernel driver is active and detach it if needed
+            try {
+              if (
+                device.kernelDriverActive &&
+                (await device.kernelDriverActive(0))
+              ) {
+                console.log("Kernel driver active, attempting to detach...");
+                await device.detachKernelDriver(0);
+                console.log("Kernel driver detached");
+              }
+            } catch (kernelError) {
+              console.log(
+                "Kernel driver check/detach not supported or failed:",
+                kernelError
+              );
+              // Continue anyway - this might not be supported in all browsers
+            }
+
+            // Find the first available interface
+            if (device.configuration.interfaces.length === 0) {
+              throw new Error("No interfaces found in device configuration");
+            }
+
+            // Try each interface until one is successfully claimed
+            let interfaceClaimed = false;
+            const interfaces = device.configuration.interfaces;
+            console.log(`Device has ${interfaces.length} interfaces`);
+
+            for (let i = 0; i < interfaces.length; i++) {
+              const interfaceNumber = interfaces[i].interfaceNumber;
+              console.log(
+                `Trying interface #${interfaceNumber} (${i + 1} of ${
+                  interfaces.length
+                })`
+              );
+
+              try {
+                // Try to detach kernel driver explicitly
+                try {
+                  if (
+                    device.kernelDriverActive &&
+                    (await device.kernelDriverActive(interfaceNumber))
+                  ) {
+                    await device.detachKernelDriver(interfaceNumber);
+                    console.log(
+                      `Kernel driver detached from interface ${interfaceNumber}`
+                    );
+                  }
+                } catch (detachError) {
+                  console.log(
+                    `Detach attempt on interface ${interfaceNumber}:`,
+                    detachError
+                  );
+                }
+
+                // Claim the interface with timeout
+                console.log(
+                  `Attempting to claim interface ${interfaceNumber}...`
+                );
+                await device.claimInterface(interfaceNumber);
+                console.log(
+                  `Successfully claimed interface ${interfaceNumber}`
+                );
+
+                // Select alternate interface if needed
+                if (interfaces[i].alternates.length > 0) {
+                  await device.selectAlternateInterface(interfaceNumber, 0);
+                  console.log(
+                    `Selected alternate interface for ${interfaceNumber}`
+                  );
+                }
+
+                interfaceClaimed = true;
+                break; // Exit the loop once an interface is claimed
+              } catch (claimError) {
+                console.warn(
+                  `Failed to claim interface ${interfaceNumber}:`,
+                  claimError
+                );
+                // Continue to the next interface
+              }
+            }
+
+            if (!interfaceClaimed) {
+              const errorMsg =
+                "Failed to claim any interface. Please ensure the printer is not in use by another application.";
+              console.error(errorMsg);
+              document.getElementById("status").textContent = errorMsg;
+              throw new Error("No interfaces could be claimed");
+            }
+
+            document.getElementById("status").textContent =
+              "Printer connected successfully.";
+            document.getElementById("print").disabled = false;
+          } catch (error) {
+            console.error("Error after device selection:", error);
+
+            if (
+              error.name === "AccessDeniedError" ||
+              error.name === "SecurityError"
+            ) {
+              document.getElementById("status").textContent =
+                "Permission denied. Please reconnect and allow access to the printer.";
+            } else {
+              document.getElementById(
+                "status"
+              ).textContent = `Connection error: ${error.message}`;
+            }
+          }
+        } catch (error) {
+          console.error("Error selecting device:", error);
+          document.getElementById("status").textContent =
+            error.name === "NotFoundError"
+              ? "No compatible printer found."
+              : `Error: ${error.message}`;
+        }
+      });
+
+      document.getElementById("print").addEventListener("click", async () => {
+        try {
+          if (!device) {
+            document.getElementById("status").textContent =
+              "No printer connected.";
+            return;
+          }
+
+          // ESC/POS commands for initialization and text printing
+          const commands = [
+            0x1b,
+            0x40, // Initialize printer
+            ...new TextEncoder().encode("Hello, World!\n\n\n"),
+            0x1d,
+            0x56,
+            0x41,
+            0x10, // Cut paper (partial cut)
+          ];
+
+          // Get the out endpoints from the interface
+          const iface = device.configuration.interfaces[0];
+          const endpoint = iface.alternate.endpoints.find(
+            (e) => e.direction === "out"
+          );
+
+          if (!endpoint) {
+            throw new Error("Out endpoint not found");
+          }
+
+          await device.transferOut(
+            endpoint.endpointNumber,
+            new Uint8Array(commands)
+          );
+
+          document.getElementById("status").textContent =
+            "Test print completed.";
+        } catch (error) {
+          console.error("Error printing:", error);
+          document.getElementById("status").textContent = "Failed to print.";
+        }
+      });
+    </script>
+  </body>
+</html>
