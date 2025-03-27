@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<body>
+  <button onclick="requestDevice()">Connect USB</button>
+  <script>
+    async function requestDevice() {
+      try {
+        const device = await navigator.usb.requestDevice({ filters: [] });
+        console.log("Connected:", device);
+      } catch (error) {
+        console.error("Error:", error);
+      }
+    }
+  </script>
+</body>
+</html>

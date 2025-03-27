@@ -3,16 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>WebUSB Printer</title>
+    <title>WebUSB Printer V2</title>
   </head>
   <body>
     <h1>WebUSB Printer Test</h1>
     <button id="connect">Connect to Printer</button>
-    <button id="print" disabled>Print Test Message</button>
+    <button id="print" >Print Test Message</button>
     <p id="status"></p>
 
     <script>
       let device;
+      let outEndpoint; // Store the OUT endpoint globally
 
       document.getElementById("connect").addEventListener("click", async () => {
         try {
@@ -25,7 +26,9 @@
 
           // Request a USB device with specific vendor and product IDs
           device = await navigator.usb.requestDevice({
-            filters: [{ vendorId: 0x04b8, productId: 0x0202 }], // Epson printer
+            // filters: [{ vendorId: 0x04b8, productId: 0x0202 }], // Epson printer
+            // filters: [{ vendorId: 1208, productId: 514 }], // Epson printer
+            filters: [], // Epson printer
           });
           console.log("Device selected:", device);
 
@@ -58,9 +61,47 @@
             // Try claiming interface 0 (most common for printers)
             const interfaceNumber = 0;
             try {
+              // First try detaching the kernel driver if it's attached
+              if (
+                device.configuration.interfaces[0].alternate.interfaceNumber ===
+                interfaceNumber
+              ) {
+                try {
+                  await device.releaseInterface(interfaceNumber);
+                } catch (e) {
+                  console.log(
+                    "No need to release interface (not previously claimed)"
+                  );
+                }
+
+                try {
+                  await device.detachKernelDriver(interfaceNumber);
+                  console.log("Kernel driver detached successfully");
+                } catch (e) {
+                  console.log(
+                    "No kernel driver to detach or detach not supported"
+                  );
+                }
+
+                // Select alternate interface (typically 0)
+                await device.selectAlternateInterface(interfaceNumber, 0);
+              }
+
               await device.claimInterface(interfaceNumber);
               console.log(`Successfully claimed interface ${interfaceNumber}`);
               interfaceClaimed = true;
+
+              // Find an OUT endpoint on this interface
+              const iface = device.configuration.interfaces[interfaceNumber];
+              const altSetting = iface.alternate;
+              outEndpoint = altSetting.endpoints.find(
+                (e) => e.direction === "out"
+              );
+              if (outEndpoint) {
+                console.log("Found OUT endpoint:", outEndpoint);
+              } else {
+                console.warn("No OUT endpoint found on interface 0");
+              }
             } catch (claimError) {
               console.warn(
                 `Failed to claim interface ${interfaceNumber}:`,
@@ -78,7 +119,21 @@
                     `Successfully claimed interface ${interfaceNumber}`
                   );
                   interfaceClaimed = true;
-                  break;
+
+                  // Try to find an OUT endpoint on this interface
+                  const iface = interfaces[i];
+                  const altSetting = iface.alternate;
+                  outEndpoint = altSetting.endpoints.find(
+                    (e) => e.direction === "out"
+                  );
+                  if (outEndpoint) {
+                    console.log("Found OUT endpoint:", outEndpoint);
+                    break;
+                  } else {
+                    console.warn(
+                      `No OUT endpoint found on interface ${interfaceNumber}`
+                    );
+                  }
                 } catch (error) {
                   console.warn(
                     `Failed to claim interface ${interfaceNumber}:`,
@@ -94,6 +149,12 @@
               console.error(errorMsg);
               document.getElementById("status").textContent = errorMsg;
               throw new Error("No interfaces could be claimed");
+            }
+
+            if (!outEndpoint) {
+              document.getElementById("status").textContent =
+                "Connected but no suitable OUT endpoint found. Cannot print.";
+              throw new Error("No OUT endpoint found");
             }
 
             document.getElementById("status").textContent =
@@ -128,33 +189,115 @@
           if (!device) {
             document.getElementById("status").textContent =
               "No printer connected.";
-            return;
+            // return;
           }
 
-          // ESC/POS commands for initialization and text printing
-          const commands = new Uint8Array([
-            0x1b,
-            0x40, // Initialize printer
-            ...new TextEncoder().encode("Hello, World!\n\n\n"),
-            0x1d,
-            0x56,
-            0x41,
-            0x10, // Cut paper (partial cut)
-          ]);
+          if (!outEndpoint) {
+            document.getElementById("status").textContent =
+              "No printer endpoint found. Please reconnect.";
+            // return;
+          }
 
-          // Find the bulk OUT endpoint (common for printers)
-          const iface = device.configuration.interfaces[0];
-          const endpoint = iface.alternate.endpoints.find(
-            (e) => e.direction === "out" && e.type === "bulk"
+          const items = [
+            {
+              code: "SAU016",
+              description: "SAUSAGE GARLIC",
+              qty: 1.0,
+              rate: 420.0,
+              amount: 420.0,
+            },
+            {
+              code: "BC0003",
+              description: "CATERING PACK FRESH CHICKEN",
+              qty: 5.085,
+              rate: 890.0,
+              amount: 4525.65,
+            },
+          ];
+
+          const encoder = new TextEncoder();
+          let receiptText = `
+MAXIES & COMPANY (PVT) LTD
+WENNAPPUWA RETAIL OUTLET
+Chilaw Rd, Kosgasa Junction, Wennappuwa.
+Tel: 076-6209012
+
+Invoice Time : 25 Nov 2024 11:30
+Salesman : THILINI
+VAT Reg. No. : 114220736-7000
+
+--------- RETAIL SALES INVOICE ---------
+
+CODE   DESCRIPTION\n
+         QTY    RATE    AMOUNT\n
+----------------------------------------
+          `;
+          // --------------------------------
+          // Titles for quantity, rate, and amount
+          // receiptText += `\n       QTY    RATE    AMOUNT\n`;
+          // receiptText += `----------------------------\n`;
+
+          // Dynamically add each item with two-line format
+          items.forEach((item) => {
+            receiptText += `${item.code} ${item.description}\n`; // First line with code & description
+            receiptText += `       ${item.qty
+              .toFixed(3)
+              .padStart(5)} ${item.rate.toFixed(2).padStart(7)} ${item.amount
+              .toFixed(2)
+              .padStart(9)}\n`; // Second line with qty, rate, amount
+          });
+
+          receiptText += `----------------------------
+Total Gross Amount     : 4945.65
+Total Net Amount       : 4945.65
+
+Bill Type : CREDIT CARD
+PEO       : PEOPLES BANK CARD
+Card Type : MAST
+Tracer No : 13694
+Invoice No: WNS0974787
+
+** Customer Reward Points **
+0770489791 - Mr. SURANGA FERNANDO
+You have earned 9.89 reward points.
+Your rewards balance is 230.73
+
+Returns not accepted due to hygienic reasons
+
+Thank you, Come again.
+
+Website : www.maxies.lk
+e-mail  : maxies@maxies.lk
+Suggestions : 0704794795`;
+
+          // Create initialization commands
+          const initCommand = new Uint8Array([0x1b, 0x40]); // Initialize printer
+
+          // Convert text to Uint8Array
+          const textData = encoder.encode(receiptText);
+
+          // Create cut command
+          const cutCommand = new Uint8Array([0x1d, 0x56, 0x41, 0x10]); // Cut paper (partial cut)
+
+          // Combine all commands into a single ArrayBuffer
+          const combinedLength =
+            initCommand.length + textData.length + cutCommand.length;
+          const combinedArray = new Uint8Array(combinedLength);
+
+          // Copy each part into the combined array
+          combinedArray.set(initCommand, 0);
+          combinedArray.set(textData, initCommand.length);
+          combinedArray.set(cutCommand, initCommand.length + textData.length);
+
+          // Send the combined command array to the printer using the stored endpoint
+          await device.transferOut(
+            outEndpoint.endpointNumber,
+            combinedArray.buffer
           );
+          // document.getElementById("status").textContent =
+          // "Test print completed.";
 
-          if (!endpoint) {
-            throw new Error("Out endpoint not found");
-          }
-
-          await device.transferOut(endpoint.endpointNumber, commands);
-          document.getElementById("status").textContent =
-            "Test print completed.";
+          document.getElementById("status").textContent = receiptText;
         } catch (error) {
           console.error("Error printing:", error);
           document.getElementById(
