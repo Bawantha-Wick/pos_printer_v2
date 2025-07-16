@@ -9,7 +9,6 @@ async function checkPrinterAccess() {
     console.log("Devices:", devices);
     // If we can access any previously authorized devices, permissions are working
     if (devices.length > 0) {
-      
       return { hasPermission: true };
     }
     const opSt = await devices[0].open();
@@ -33,6 +32,7 @@ const testPrintBtn = document.getElementById("testPrintBtn");
 const printCustomBtn = document.getElementById("printCustomBtn");
 const customText = document.getElementById("customText");
 const statusDiv = document.getElementById("status");
+const openDrawerBtn = document.getElementById("openDrawerBtn");
 
 // Initialize the page
 document.addEventListener("DOMContentLoaded", () => {
@@ -112,6 +112,12 @@ connectBtn.addEventListener("click", async () => {
     disconnectBtn.disabled = false;
     testPrintBtn.disabled = false;
     printCustomBtn.disabled = false;
+    if (openDrawerBtn) {
+      openDrawerBtn.disabled = false;
+    }
+    if (document.getElementById("diagnoseBtn")) {
+      document.getElementById("diagnoseBtn").disabled = false;
+    }
 
     console.log("Printer connected:", printerDevice);
   } catch (error) {
@@ -182,6 +188,12 @@ disconnectBtn.addEventListener("click", async () => {
     disconnectBtn.disabled = true;
     testPrintBtn.disabled = true;
     printCustomBtn.disabled = true;
+    if (openDrawerBtn) {
+      openDrawerBtn.disabled = true;
+    }
+    if (document.getElementById("diagnoseBtn")) {
+      document.getElementById("diagnoseBtn").disabled = true;
+    }
 
     console.log("Printer disconnected");
   } catch (error) {
@@ -189,6 +201,190 @@ disconnectBtn.addEventListener("click", async () => {
     statusDiv.textContent = `Error: ${error.message}`;
   }
 });
+
+// Diagnose printer button click handler
+document.getElementById("diagnoseBtn").addEventListener("click", async () => {
+  await diagnosePrinter();
+});
+
+// Open drawer button click handler
+if (openDrawerBtn) {
+  openDrawerBtn.addEventListener("click", async () => {
+    await forceOpenDrawer();
+  });
+}
+
+async function diagnosePrinter() {
+  if (!printerDevice) {
+    statusDiv.textContent = "Printer not connected. Cannot run diagnostics.";
+    console.error("Diagnostics failed: Printer not connected.");
+    return;
+  }
+
+  console.group("Printer Diagnostics");
+  statusDiv.textContent = "Running diagnostics... Check the console (F12).";
+
+  console.log("Device Info:", {
+    name: printerDevice.productName,
+    manufacturer: printerDevice.manufacturerName,
+    vendorId: `0x${printerDevice.vendorId.toString(16).padStart(4, "0")}`,
+    productId: `0x${printerDevice.productId.toString(16).padStart(4, "0")}`,
+    serialNumber: printerDevice.serialNumber,
+  });
+
+  console.log("Full Device Configuration:", printerDevice.configuration);
+
+  if (printerDevice.configuration) {
+    console.log(
+      `Found ${printerDevice.configuration.interfaces.length} interfaces.`
+    );
+    printerDevice.configuration.interfaces.forEach((iface, i) => {
+      console.group(
+        `Interface ${i} (Interface Number: ${iface.interfaceNumber})`
+      );
+      console.log(`  - Claimed: ${iface.claimed}`);
+      console.log(`  - Alternates: ${iface.alternates.length}`);
+      iface.alternates.forEach((alt, j) => {
+        console.group(`  Alternate ${j}`);
+        console.log(`    - Alternate Setting: ${alt.alternateSetting}`);
+        console.log(`    - Interface Class: ${alt.interfaceClass}`);
+        console.log(`    - Interface Subclass: ${alt.interfaceSubclass}`);
+        console.log(`    - Interface Protocol: ${alt.interfaceProtocol}`);
+        console.log(`    - Endpoints: ${alt.endpoints.length}`);
+        alt.endpoints.forEach((ep, k) => {
+          console.log(`      Endpoint ${k}:`, {
+            number: ep.endpointNumber,
+            direction: ep.direction,
+            type: ep.type,
+            packetSize: ep.packetSize,
+          });
+        });
+        console.groupEnd();
+      });
+      console.groupEnd();
+    });
+  } else {
+    console.warn(
+      "Device configuration is null. The device might not be properly initialized."
+    );
+  }
+
+  console.groupEnd();
+  statusDiv.textContent =
+    "Diagnostics complete. Check the console for details.";
+}
+
+async function forceOpenDrawer() {
+  if (!printerDevice) {
+    statusDiv.textContent = "Printer not connected";
+    console.warn("Cannot open drawer, printer not connected.");
+    return;
+  }
+
+  console.group("Force Opening Cash Drawer");
+  statusDiv.textContent = "Sending open commands... Check console for details.";
+
+  try {
+    // Send the specific cash drawer command directly
+    const command = new Uint8Array([0x1b, 0x70, 0x30, 0x42, 0x45]); // \u001B\u0070\u0030\u0042\u0045
+
+    // Find the bulk out endpoint for direct command
+    const interface = printerDevice.configuration.interfaces[0];
+    const endpoint = interface.alternate.endpoints.find(
+      (e) => e.direction === "out" && e.type === "bulk"
+    );
+
+    if (!endpoint) {
+      throw new Error("Could not find bulk out endpoint");
+    }
+
+    // Send the drawer command directly
+    console.log(
+      "Sending drawer command directly to endpoint",
+      endpoint.endpointNumber
+    );
+    await printerDevice.transferOut(endpoint.endpointNumber, command);
+
+    console.log("Cash drawer command sent successfully");
+    statusDiv.textContent = "Cash drawer command sent. Check if drawer opened.";
+    console.groupEnd();
+    return;
+  } catch (error) {
+    console.error("Error sending drawer command:", error);
+    statusDiv.textContent = `Error: ${error.message}`;
+
+    // Fallback to the old method if direct command fails
+    console.log("Trying fallback method...");
+  }
+
+  // The specific cash drawer command provided by the user.
+  const drawerCommands = [
+    {
+      name: "Custom Drawer Command",
+      cmd: new Uint8Array([0x1b, 0x70, 0x30, 0x42, 0x45]), // \u001B\u0070\u0030\u0042\u0045
+    },
+  ];
+
+  const interfaces = printerDevice.configuration.interfaces;
+  let commandSent = false;
+
+  for (const iface of interfaces) {
+    console.log(`Checking Interface #${iface.interfaceNumber}`);
+    // Don't need to iterate alternates, claiming the interface selects the default.
+    for (const endpoint of iface.alternate.endpoints) {
+      if (endpoint.direction === "out") {
+        console.log(
+          `Found OUT endpoint #${endpoint.endpointNumber}. Trying all commands...`
+        );
+        try {
+          // We must claim the interface to use it.
+          await printerDevice.claimInterface(iface.interfaceNumber);
+          console.log(
+            `  Successfully claimed interface #${iface.interfaceNumber}.`
+          );
+
+          for (const drawerCmd of drawerCommands) {
+            try {
+              console.log(`    -> Sending command: ${drawerCmd.name}`);
+              await printerDevice.transferOut(
+                endpoint.endpointNumber,
+                drawerCmd.cmd
+              );
+              commandSent = true;
+            } catch (e) {
+              console.warn(
+                `    -> FAILED to send command ${drawerCmd.name} to endpoint ${endpoint.endpointNumber}:`,
+                e.message
+              );
+            }
+          }
+          // Release the interface so other applications can use it.
+          await printerDevice.releaseInterface(iface.interfaceNumber);
+          console.log(`  Released interface #${iface.interfaceNumber}.`);
+        } catch (e) {
+          console.error(
+            `Could not claim/release interface #${iface.interfaceNumber}:`,
+            e.message
+          );
+          console.info(
+            "This can happen if the OS or another program is using the device. On Linux, check udev rules. On Windows, a driver might be attached."
+          );
+        }
+      }
+    }
+  }
+  console.groupEnd();
+
+  if (commandSent) {
+    statusDiv.textContent =
+      "All cash drawer commands sent. Check if drawer opened.";
+    console.log("Finished sending all commands to all OUT endpoints.");
+  } else {
+    statusDiv.textContent =
+      "Could not find any suitable endpoint to send commands.";
+    console.error("No OUT endpoints found or interfaces could be claimed.");
+  }
+}
 
 // Test print button click handler
 testPrintBtn.addEventListener("click", async () => {
@@ -242,6 +438,14 @@ testPrintBtn.addEventListener("click", async () => {
     await sendToPrinter(commands);
 
     statusDiv.textContent = "Test receipt printed successfully!";
+
+    // Open drawer after printing with a small delay
+    setTimeout(async () => {
+      // Specific cash drawer command
+      const drawerCommand = new Uint8Array([0x1b, 0x70, 0x30, 0x42, 0x45]); // \u001B\u0070\u0030\u0042\u0045
+      await sendToPrinter(drawerCommand);
+      console.log("Cash drawer command sent after printing");
+    }, 500);
   } catch (error) {
     console.error("Error printing test receipt:", error);
     statusDiv.textContent = `Print error: ${error.message}`;
@@ -276,6 +480,14 @@ printCustomBtn.addEventListener("click", async () => {
     await sendToPrinter(commands);
 
     statusDiv.textContent = "Custom text printed successfully!";
+
+    // Open drawer after printing with a small delay
+    setTimeout(async () => {
+      // Specific cash drawer command
+      const drawerCommand = new Uint8Array([0x1b, 0x70, 0x30, 0x42, 0x45]); // \u001B\u0070\u0030\u0042\u0045
+      await sendToPrinter(drawerCommand);
+      console.log("Cash drawer command sent after printing");
+    }, 500);
   } catch (error) {
     console.error("Error printing custom text:", error);
     statusDiv.textContent = `Print error: ${error.message}`;

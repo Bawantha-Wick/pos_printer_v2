@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Keyboard Lighting Control</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+
+      .control-panel {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        margin-top: 20px;
+      }
+
+      button {
+        padding: 10px;
+        margin: 5px;
+        cursor: pointer;
+        border: none;
+        border-radius: 4px;
+        background-color: #4caf50;
+        color: white;
+        font-weight: bold;
+      }
+
+      button:hover {
+        background-color: #45a049;
+      }
+
+      button:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+      }
+
+      .color-picker {
+        margin: 10px 0;
+      }
+
+      #status {
+        margin-top: 20px;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        min-height: 100px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>RGB Keyboard Control</h1>
+    <button id="connect">Connect to Keyboard</button>
+
+    <div class="color-picker">
+      <label for="color">Select Color: </label>
+      <input type="color" id="color" value="#ff0000" />
+      <label for="brightness">Brightness: </label>
+      <input type="range" id="brightness" min="0" max="100" value="100" />
+    </div>
+
+    <div class="control-panel">
+      <button id="pattern-static" disabled>Static Color</button>
+      <button id="pattern-wave" disabled>Wave Effect</button>
+      <button id="pattern-breathe" disabled>Breathing Effect</button>
+      <button id="pattern-reactive" disabled>Reactive</button>
+      <button id="pattern-rainbow" disabled>Rainbow</button>
+      <button id="pattern-ripple" disabled>Ripple Effect</button>
+      <button id="speed-up" disabled>Speed Up</button>
+      <button id="speed-down" disabled>Speed Down</button>
+      <button id="turn-off" disabled>Turn Off</button>
+    </div>
+
+    <div id="status">Status: Disconnected</div>
+
+    <script>
+      let keyboardDevice;
+      let deviceInterface;
+      let controlSpeed = 5; // Default speed for effects (1-10)
+
+      // Check if WebHID is supported
+      if (!navigator.hid) {
+        document.getElementById("status").textContent =
+          "WebHID is not supported in this browser. Try Chrome or Edge.";
+        document.getElementById("connect").disabled = true;
+      }
+
+      // Check if WebUSB is supported
+      if (!navigator.usb) {
+        document.getElementById("status").textContent =
+          "WebUSB is not supported in this browser. Try Chrome or Edge.";
+        document.getElementById("connect").disabled = true;
+      }
+
+      // Connect button event
+      document.getElementById("connect").addEventListener("click", async () => {
+        try {
+          // Request access to USB devices that are likely to be keyboards
+          const device = await navigator.usb.requestDevice({
+            filters: [
+              // Common gaming keyboard vendors
+              // { vendorId: 0x1532 }, // Razer
+              // { vendorId: 0x046d }, // Logitech
+              // { vendorId: 0x1038 }, // SteelSeries
+              // { vendorId: 0x24f0 }, // Corsair
+              // { vendorId: 0x0951 }, // Kingston/HyperX
+              // Add more vendors as needed
+            ],
+          });
+
+          console.log("Selected device:", device);
+
+          keyboardDevice = device;
+          document.getElementById(
+            "status"
+          ).textContent = `Selected device: ${keyboardDevice.productName} from ${keyboardDevice.manufacturerName}`;
+
+          // Open connection to the device
+          await keyboardDevice.open();
+
+          // Claim interface 0 (most keyboards use interface 0)
+          // You might need to adjust this based on your specific keyboard
+          const interfaceNumber = 0;
+          if (keyboardDevice.configuration === null) {
+            await keyboardDevice.selectConfiguration(1);
+          }
+
+          await keyboardDevice.claimInterface(interfaceNumber);
+          document.getElementById("status").textContent +=
+            "\nConnected successfully!";
+
+          // Enable effect buttons
+          enableButtons(true);
+
+          // Log device information for debugging
+          console.log("Connected device:", keyboardDevice);
+        } catch (error) {
+          console.error("Error connecting to keyboard:", error);
+          document.getElementById(
+            "status"
+          ).textContent = `Connection error: ${error.message}`;
+        }
+      });
+
+      // Helper function to enable/disable all effect buttons
+      function enableButtons(enabled) {
+        const buttons = [
+          "pattern-static",
+          "pattern-wave",
+          "pattern-breathe",
+          "pattern-reactive",
+          "pattern-rainbow",
+          "pattern-ripple",
+          "speed-up",
+          "speed-down",
+          "turn-off",
+        ];
+
+        buttons.forEach((id) => {
+          document.getElementById(id).disabled = !enabled;
+        });
+      }
+
+      // Convert hex color to RGB components
+      function hexToRgb(hex) {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result
+          ? {
+              r: parseInt(result[1], 16),
+              g: parseInt(result[2], 16),
+              b: parseInt(result[3], 16),
+            }
+          : { r: 255, g: 0, b: 0 };
+      }
+
+      // Apply brightness to RGB values
+      function applyBrightness(rgb, brightness) {
+        const factor = brightness / 100;
+        return {
+          r: Math.round(rgb.r * factor),
+          g: Math.round(rgb.g * factor),
+          b: Math.round(rgb.b * factor),
+        };
+      }
+
+      // Get current color with brightness applied
+      function getCurrentColor() {
+        const hexColor = document.getElementById("color").value;
+        const brightness = document.getElementById("brightness").value;
+        const rgb = hexToRgb(hexColor);
+        return applyBrightness(rgb, brightness);
+      }
+
+      // Send command to keyboard
+      async function sendCommand(command, data = []) {
+        if (!keyboardDevice || !keyboardDevice.opened) {
+          document.getElementById("status").textContent =
+            "No keyboard connected.";
+          return;
+        }
+
+        try {
+          // This is a generic approach - specific commands will vary by keyboard manufacturer
+          const payload = new Uint8Array([command, ...data]);
+
+          // Most keyboards use endpoint 1 for output, but this might need adjustment
+          // for your specific device
+          const endpointNumber = 1;
+          const endpoints =
+            keyboardDevice.configuration.interfaces[0].alternate.endpoints;
+          const endpoint = endpoints.find(
+            (e) => e.direction === "out" && e.endpointNumber === endpointNumber
+          );
+
+          if (!endpoint) {
+            throw new Error("Output endpoint not found");
+          }
+
+          // Send the data to the device
+          await keyboardDevice.transferOut(endpointNumber, payload);
+
+          document.getElementById("status").textContent =
+            "Command sent successfully!";
+        } catch (error) {
+          console.error("Error sending command:", error);
+          document.getElementById(
+            "status"
+          ).textContent = `Command error: ${error.message}`;
+        }
+      }
+
+      // Set up button event handlers
+      document
+        .getElementById("pattern-static")
+        .addEventListener("click", async () => {
+          const color = getCurrentColor();
+          // Command structure will vary by keyboard manufacturer
+          // Example: [command_id, r, g, b]
+          await sendCommand(0x01, [color.r, color.g, color.b]);
+          document.getElementById(
+            "status"
+          ).textContent = `Static color set: RGB(${color.r}, ${color.g}, ${color.b})`;
+        });
+
+      document
+        .getElementById("pattern-wave")
+        .addEventListener("click", async () => {
+          const color = getCurrentColor();
+          // Example: [command_id, effect_id, direction, speed, r, g, b]
+          await sendCommand(0x02, [
+            0x01,
+            0x01,
+            controlSpeed,
+            color.r,
+            color.g,
+            color.b,
+          ]);
+          document.getElementById("status").textContent =
+            "Wave effect activated";
+        });
+
+      document
+        .getElementById("pattern-breathe")
+        .addEventListener("click", async () => {
+          const color = getCurrentColor();
+          // Example: [command_id, effect_id, speed, r, g, b]
+          await sendCommand(0x02, [
+            0x02,
+            controlSpeed,
+            color.r,
+            color.g,
+            color.b,
+          ]);
+          document.getElementById("status").textContent =
+            "Breathing effect activated";
+        });
+
+      document
+        .getElementById("pattern-reactive")
+        .addEventListener("click", async () => {
+          const color = getCurrentColor();
+          // Example: [command_id, effect_id, duration, r, g, b]
+          await sendCommand(0x02, [
+            0x03,
+            controlSpeed,
+            color.r,
+            color.g,
+            color.b,
+          ]);
+          document.getElementById("status").textContent =
+            "Reactive effect activated";
+        });
+
+      document
+        .getElementById("pattern-rainbow")
+        .addEventListener("click", async () => {
+          // Example: [command_id, effect_id, speed]
+          await sendCommand(0x02, [0x04, controlSpeed]);
+          document.getElementById("status").textContent =
+            "Rainbow effect activated";
+        });
+
+      document
+        .getElementById("pattern-ripple")
+        .addEventListener("click", async () => {
+          const color = getCurrentColor();
+          // Example: [command_id, effect_id, speed, r, g, b]
+          await sendCommand(0x02, [
+            0x05,
+            controlSpeed,
+            color.r,
+            color.g,
+            color.b,
+          ]);
+          document.getElementById("status").textContent =
+            "Ripple effect activated";
+        });
+
+      document
+        .getElementById("speed-up")
+        .addEventListener("click", async () => {
+          controlSpeed = Math.min(10, controlSpeed + 1);
+          document.getElementById(
+            "status"
+          ).textContent = `Effect speed increased: ${controlSpeed}/10`;
+        });
+
+      document
+        .getElementById("speed-down")
+        .addEventListener("click", async () => {
+          controlSpeed = Math.max(1, controlSpeed - 1);
+          document.getElementById(
+            "status"
+          ).textContent = `Effect speed decreased: ${controlSpeed}/10`;
+        });
+
+      document
+        .getElementById("turn-off")
+        .addEventListener("click", async () => {
+          // Example: [command_id, 0, 0, 0, 0]
+          await sendCommand(0x01, [0, 0, 0, 0]);
+          document.getElementById("status").textContent =
+            "Keyboard lights turned off";
+        });
+
+      // Handle disconnection
+      navigator.hid.addEventListener("disconnect", (event) => {
+        if (event.device === keyboardDevice) {
+          keyboardDevice = null;
+          document.getElementById("status").textContent =
+            "Keyboard disconnected";
+          enableButtons(false);
+        }
+      });
+    </script>
+  </body>
+</html>

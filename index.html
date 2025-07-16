@@ -8,12 +8,21 @@
   <body>
     <h1>WebUSB Printer Test</h1>
     <button id="connect">Connect to Printer</button>
-    <button id="print" >Print Test Message</button>
+    <button id="print">Print Test Message</button>
+    <button id="openDrawer" disabled>Open Cash Drawer</button>
+    <button id="diagnoseBtn" disabled>Diagnose Printer</button>
     <p id="status"></p>
 
     <script>
       let device;
       let outEndpoint; // Store the OUT endpoint globally
+
+      // Initialize on page load
+      document.addEventListener("DOMContentLoaded", () => {
+        // Disable buttons initially
+        document.getElementById("print").disabled = true;
+        document.getElementById("openDrawer").disabled = true;
+      });
 
       document.getElementById("connect").addEventListener("click", async () => {
         try {
@@ -160,6 +169,8 @@
             document.getElementById("status").textContent =
               "Printer connected successfully.";
             document.getElementById("print").disabled = false;
+            document.getElementById("openDrawer").disabled = false;
+            document.getElementById("diagnoseBtn").disabled = false;
           } catch (error) {
             console.error("Error after device selection:", error);
 
@@ -279,15 +290,25 @@ Suggestions : 0704794795`;
           // Create cut command
           const cutCommand = new Uint8Array([0x1d, 0x56, 0x41, 0x10]); // Cut paper (partial cut)
 
+          // Cash drawer command
+          const drawerCommand = new Uint8Array([0x1b, 0x70, 0x30, 0x42, 0x45]); // \u001B\u0070\u0030\u0042\u0045
+
           // Combine all commands into a single ArrayBuffer
           const combinedLength =
-            initCommand.length + textData.length + cutCommand.length;
+            initCommand.length +
+            textData.length +
+            cutCommand.length +
+            drawerCommand.length;
           const combinedArray = new Uint8Array(combinedLength);
 
           // Copy each part into the combined array
           combinedArray.set(initCommand, 0);
           combinedArray.set(textData, initCommand.length);
           combinedArray.set(cutCommand, initCommand.length + textData.length);
+          combinedArray.set(
+            drawerCommand,
+            initCommand.length + textData.length + cutCommand.length
+          );
 
           // Send the combined command array to the printer using the stored endpoint
           await device.transferOut(
@@ -303,6 +324,44 @@ Suggestions : 0704794795`;
           document.getElementById(
             "status"
           ).textContent = `Print failed: ${error.message}`;
+        }
+      });
+
+      document
+        .getElementById("openDrawer")
+        .addEventListener("click", async () => {
+          if (typeof forceOpenDrawer === "function") {
+            forceOpenDrawer();
+          } else {
+            // Fallback for the other html file
+            if (!device || !outEndpoint) {
+              document.getElementById("status").textContent =
+                "Printer not connected.";
+              return;
+            }
+            try {
+              const drawerPulse = new Uint8Array([
+                0x1b,
+                0x70,
+                0x30,
+                0x42,
+                0x45, // \u001B\u0070\u0030\u0042\u0045
+              ]);
+              await device.transferOut(outEndpoint.endpointNumber, drawerPulse);
+              document.getElementById("status").textContent =
+                "Cash drawer command sent.";
+            } catch (error) {
+              console.error("Error opening cash drawer:", error);
+              document.getElementById(
+                "status"
+              ).textContent = `Drawer error: ${error.message}`;
+            }
+          }
+        });
+
+      document.getElementById("diagnoseBtn").addEventListener("click", () => {
+        if (typeof diagnosePrinter === "function") {
+          diagnosePrinter();
         }
       });
     </script>

@@ -6,7 +6,17 @@
     async function requestDevice() {
       try {
         const device = await navigator.usb.requestDevice({ filters: [] });
+        // const deviceSerial = await navigator.serial.requestPort();
         console.log("Connected:", device);
+
+        // console.log("Connected deviceSerial:", deviceSerial);
+
+        // add a 5 second delay before opening the device
+        console.log(new Date())
+        await new Promise((resolve) => setTimeout(resolve, 10000));
+        console.log(new Date())
+
+        await device.open();
       } catch (error) {
         console.error("Error:", error);
       }
