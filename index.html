@@ -6,12 +6,638 @@
     <title>WebUSB Printer V2</title>
   </head>
   <body>
-    <h1>WebUSB Printer Test</h1>
-    <button id="connect">Connect to Printer</button>
-    <button id="print">Print Test Message</button>
-    <button id="openDrawer" disabled>Open Cash Drawer</button>
-    <button id="diagnoseBtn" disabled>Diagnose Printer</button>
-    <p id="status"></p>
+    <h1>POS System Control Panel</h1>
+
+    <!-- Printer Controls -->
+    <div class="section">
+      <h2>Thermal Printer</h2>
+      <button id="connect">Connect to Printer</button>
+      <button id="print">Print Test Message</button>
+      <button id="openDrawer" disabled>Open Cash Drawer</button>
+      <button id="diagnoseBtn" disabled>Diagnose Printer</button>
+      <p id="status"></p>
+    </div>
+
+    <!-- LED Display Controls -->
+    <div class="section">
+      <h2>LED Display Control</h2>
+      <button id="ledConnect">Connect to LED Display</button>
+      <button id="ledDisconnect" disabled>Disconnect LED Display</button>
+      <button id="ledTest" disabled>Test Display</button>
+      <button id="ledClear" disabled>Clear Display</button>
+
+      <div class="led-controls">
+        <div class="input-group">
+          <label for="ledMessage">Message:</label>
+          <input
+            type="text"
+            id="ledMessage"
+            placeholder="Enter message to display"
+            maxlength="100"
+          />
+        </div>
+
+        <div class="options-group">
+          <label for="ledEffect">Effect:</label>
+          <select id="ledEffect">
+            <option value="scroll">Scroll</option>
+            <option value="flash">Flash</option>
+            <option value="static">Static</option>
+          </select>
+
+          <label for="ledSpeed">Speed:</label>
+          <select id="ledSpeed">
+            <option value="slow">Slow</option>
+            <option value="normal" selected>Normal</option>
+            <option value="fast">Fast</option>
+          </select>
+
+          <label for="ledPosition">Position:</label>
+          <select id="ledPosition">
+            <option value="left" selected>Left</option>
+            <option value="center">Center</option>
+            <option value="right">Right</option>
+          </select>
+        </div>
+
+        <div class="button-group">
+          <button id="ledSend" disabled>Send Message</button>
+          <button id="ledPresets" disabled>Quick Messages</button>
+          <button id="ledDebug" disabled>Debug Connection</button>
+        </div>
+      </div>
+
+      <p id="ledStatus">LED Display: Not Connected</p>
+    </div>
+
+    <!-- Quick Messages Modal -->
+    <div id="quickMessagesModal" class="modal" style="display: none">
+      <div class="modal-content">
+        <span class="close">&times;</span>
+        <h3>Quick Messages</h3>
+        <div class="quick-messages">
+          <button class="quick-msg" data-msg="WELCOME">Welcome</button>
+          <button class="quick-msg" data-msg="THANK YOU">Thank You</button>
+          <button class="quick-msg" data-msg="PLEASE WAIT">Please Wait</button>
+          <button class="quick-msg" data-msg="NEXT CUSTOMER">
+            Next Customer
+          </button>
+          <button class="quick-msg" data-msg="COUNTER CLOSED">
+            Counter Closed
+          </button>
+          <button class="quick-msg" data-msg="HAVE A NICE DAY">
+            Have a Nice Day
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        background-color: #f5f5f5;
+      }
+
+      .section {
+        background: white;
+        padding: 20px;
+        margin: 20px 0;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+
+      h1 {
+        color: #333;
+        text-align: center;
+      }
+
+      h2 {
+        color: #555;
+        border-bottom: 2px solid #007cba;
+        padding-bottom: 5px;
+      }
+
+      button {
+        background-color: #007cba;
+        color: white;
+        border: none;
+        padding: 10px 15px;
+        margin: 5px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+
+      button:hover {
+        background-color: #005a87;
+      }
+
+      button:disabled {
+        background-color: #ccc;
+        cursor: not-allowed;
+      }
+
+      .led-controls {
+        margin-top: 15px;
+        padding: 15px;
+        background-color: #f9f9f9;
+        border-radius: 4px;
+      }
+
+      .input-group,
+      .options-group,
+      .button-group {
+        margin: 10px 0;
+      }
+
+      .input-group label,
+      .options-group label {
+        display: inline-block;
+        width: 80px;
+        font-weight: bold;
+      }
+
+      input[type="text"] {
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        width: 300px;
+      }
+
+      select {
+        padding: 6px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        margin: 0 10px;
+      }
+
+      #status,
+      #ledStatus {
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 4px;
+        font-weight: bold;
+      }
+
+      .connected {
+        background-color: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+      }
+
+      .disconnected {
+        background-color: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+      }
+
+      /* Modal styles */
+      .modal {
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.4);
+      }
+
+      .modal-content {
+        background-color: #fefefe;
+        margin: 15% auto;
+        padding: 20px;
+        border: none;
+        border-radius: 8px;
+        width: 80%;
+        max-width: 500px;
+      }
+
+      .close {
+        color: #aaa;
+        float: right;
+        font-size: 28px;
+        font-weight: bold;
+        cursor: pointer;
+      }
+
+      .close:hover {
+        color: black;
+      }
+
+      .quick-messages {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 10px;
+        margin-top: 15px;
+      }
+
+      .quick-msg {
+        background-color: #28a745;
+        padding: 15px;
+      }
+
+      .quick-msg:hover {
+        background-color: #218838;
+      }
+    </style>
+
+    <!-- LED Display Controller (Embedded to avoid 404 errors) -->
+    <script>
+      // LED Display Controller for CH340 Serial Converter
+      // Device ID: 1a86:7523 QinHeng Electronics CH340 serial converter
+
+      class LEDDisplayController {
+        constructor() {
+          this.port = null;
+          this.isConnected = false;
+          this.reader = null;
+          this.writer = null;
+        }
+
+        // Check if Web Serial API is supported
+        isSerialSupported() {
+          return "serial" in navigator;
+        }
+
+        // Connect to the LED display
+        async connect() {
+          try {
+            console.log("Starting LED display connection...");
+
+            if (!this.isSerialSupported()) {
+              throw new Error(
+                "Web Serial API is not supported in this browser. Please use Chrome or Edge."
+              );
+            }
+
+            console.log("Web Serial API is supported");
+
+            // First try without filters (let user select any device)
+            console.log("Requesting serial port...");
+            this.port = await navigator.serial.requestPort({
+              // Try without filters first to see all available devices
+              // filters: [
+              //   { usbVendorId: 0x1a86, usbProductId: 0x7523 }, // CH340 serial converter
+              // ],
+            });
+
+            console.log("Port selected:", this.port);
+            console.log("Port info:", {
+              vendorId: this.port.getInfo().usbVendorId,
+              productId: this.port.getInfo().usbProductId,
+            });
+
+            // Try different common baud rates for LED displays
+            const baudRates = [9600, 115200, 57600, 38400, 19200, 4800, 2400, 1200];
+            let connected = false;
+
+            for (const baudRate of baudRates) {
+              try {
+                console.log(`Trying to open port with baud rate: ${baudRate}`);
+
+                // Close port if it was previously opened
+                if (this.port.readable || this.port.writable) {
+                  try {
+                    await this.port.close();
+                  } catch (e) {
+                    console.log("Port was not open");
+                  }
+                }
+
+                // Open the serial port with different settings
+                await this.port.open({
+                  baudRate: baudRate,
+                  dataBits: 8,
+                  stopBits: 1,
+                  parity: "none",
+                  flowControl: "none",
+                });
+
+                console.log(`Successfully opened port with baud rate: ${baudRate}`);
+
+                // Set up reader and writer
+                this.reader = this.port.readable.getReader();
+                this.writer = this.port.writable.getWriter();
+
+                this.isConnected = true;
+                this.currentBaudRate = baudRate;
+                connected = true;
+                break;
+              } catch (error) {
+                console.warn(`Failed to open with baud rate ${baudRate}:`, error);
+                continue;
+              }
+            }
+
+            if (!connected) {
+              throw new Error("Failed to connect with any supported baud rate");
+            }
+
+            console.log(
+              `LED Display connected successfully with baud rate: ${this.currentBaudRate}`
+            );
+            return true;
+          } catch (error) {
+            console.error("Error connecting to LED display:", error);
+            console.error("Error details:", {
+              name: error.name,
+              message: error.message,
+              stack: error.stack,
+            });
+            throw error;
+          }
+        }
+
+        // Disconnect from the LED display
+        async disconnect() {
+          try {
+            if (this.reader) {
+              await this.reader.cancel();
+              await this.reader.releaseLock();
+              this.reader = null;
+            }
+
+            if (this.writer) {
+              await this.writer.releaseLock();
+              this.writer = null;
+            }
+
+            if (this.port) {
+              await this.port.close();
+              this.port = null;
+            }
+
+            this.isConnected = false;
+            console.log("LED Display disconnected");
+            return true;
+          } catch (error) {
+            console.error("Error disconnecting LED display:", error);
+            throw error;
+          }
+        }
+
+        // Send a message to the LED display
+        async sendMessage(message, options = {}) {
+          if (!this.isConnected || !this.writer) {
+            throw new Error("LED display is not connected");
+          }
+
+          try {
+            console.log(`Sending message: "${message}" with options:`, options);
+
+            // Default options
+            const settings = {
+              speed: "normal", // slow, normal, fast
+              effect: "scroll", // scroll, flash, static
+              position: "left", // left, center, right
+              brightness: "high", // low, medium, high
+              ...options,
+            };
+
+            // Try multiple command formats
+            const commandFormats = [
+              () => this.buildCommand(message, settings),
+              () => this.buildSimpleCommand(message, settings),
+              () => this.buildAlternativeCommand(message, settings),
+              () => this.buildRawCommand(message),
+            ];
+
+            let success = false;
+            for (let i = 0; i < commandFormats.length; i++) {
+              try {
+                const command = commandFormats[i]();
+                console.log(`Trying command format ${i + 1}: "${command}"`);
+                console.log(
+                  "Command bytes:",
+                  Array.from(new TextEncoder().encode(command)).map(
+                    (b) => "0x" + b.toString(16).padStart(2, "0")
+                  )
+                );
+
+                // Convert string to Uint8Array
+                const encoder = new TextEncoder();
+                const data = encoder.encode(command);
+
+                // Send the command
+                await this.writer.write(data);
+                console.log(`Command format ${i + 1} sent successfully`);
+                success = true;
+                break;
+              } catch (error) {
+                console.warn(`Command format ${i + 1} failed:`, error);
+                continue;
+              }
+            }
+
+            if (!success) {
+              throw new Error("All command formats failed");
+            }
+
+            console.log(`Message sent to LED display: "${message}"`);
+            return true;
+          } catch (error) {
+            console.error("Error sending message to LED display:", error);
+            throw error;
+          }
+        }
+
+        // Build command string for LED display (generic protocol)
+        buildCommand(message, settings) {
+          let command = "";
+          command += "\x01"; // SOH (Start of Header)
+          command += "01"; // Address
+          
+          switch (settings.effect) {
+            case "scroll": command += "A"; break;
+            case "flash": command += "B"; break;
+            case "static": command += "C"; break;
+            default: command += "A";
+          }
+          
+          switch (settings.speed) {
+            case "slow": command += "1"; break;
+            case "normal": command += "2"; break;
+            case "fast": command += "3"; break;
+            default: command += "2";
+          }
+          
+          switch (settings.position) {
+            case "left": command += "L"; break;
+            case "center": command += "C"; break;
+            case "right": command += "R"; break;
+            default: command += "L";
+          }
+          
+          command += message;
+          command += "\x04"; // EOT (End of Transmission)
+          command += "\r\n"; // Carriage return and line feed
+          return command;
+        }
+
+        // Simple command format
+        buildSimpleCommand(message, settings) {
+          return `<ID01><${settings.effect.toUpperCase().charAt(0)}>${message}<E>\r\n`;
+        }
+
+        // Alternative command format
+        buildAlternativeCommand(message, settings) {
+          let command = "\x02"; // STX (Start of Text)
+          command += "01"; // Address
+          
+          switch (settings.effect) {
+            case "scroll": command += "A1"; break;
+            case "flash": command += "B1"; break;
+            case "static": command += "C1"; break;
+            default: command += "A1";
+          }
+          
+          command += message;
+          command += "\x03"; // ETX (End of Text)
+          command += "\r\n";
+          return command;
+        }
+
+        // Raw command format
+        buildRawCommand(message) {
+          return message + "\r\n";
+        }
+
+        // Clear the display
+        async clearDisplay() {
+          return await this.sendMessage("", { effect: "static" });
+        }
+
+        // Send a simple text message with default settings
+        async displayText(text) {
+          return await this.sendMessage(text, {
+            effect: "scroll",
+            speed: "normal",
+            position: "left",
+          });
+        }
+
+        // Send a flashing message
+        async displayFlashing(text) {
+          return await this.sendMessage(text, {
+            effect: "flash",
+            speed: "normal",
+            position: "center",
+          });
+        }
+
+        // Send a static (non-moving) message
+        async displayStatic(text) {
+          return await this.sendMessage(text, {
+            effect: "static",
+            position: "center",
+          });
+        }
+
+        // Alternative command format for different LED display types
+        async sendAlternativeCommand(message, mode = "A") {
+          if (!this.isConnected || !this.writer) {
+            throw new Error("LED display is not connected");
+          }
+
+          try {
+            let command = `<ID01><${mode}>${message}<E>`;
+            const encoder = new TextEncoder();
+            const data = encoder.encode(command);
+            await this.writer.write(data);
+            console.log(`Alternative command sent: "${command}"`);
+            return true;
+          } catch (error) {
+            console.error("Error sending alternative command:", error);
+            throw error;
+          }
+        }
+
+        // Test connection by sending a test message
+        async testConnection() {
+          try {
+            await this.sendMessage("TEST CONNECTION", {
+              effect: "flash",
+              speed: "fast",
+              position: "center",
+            });
+
+            // Wait 3 seconds then clear
+            setTimeout(async () => {
+              try {
+                await this.clearDisplay();
+              } catch (error) {
+                console.error("Error clearing test message:", error);
+              }
+            }, 3000);
+
+            return true;
+          } catch (error) {
+            console.error("Test connection failed:", error);
+            throw error;
+          }
+        }
+
+        // Debug method to check connection and try various commands
+        async debugConnection() {
+          console.log("=== LED Display Debug Information ===");
+
+          if (!this.isSerialSupported()) {
+            console.error("Web Serial API not supported");
+            return false;
+          }
+
+          if (!this.port) {
+            console.error("No port selected");
+            return false;
+          }
+
+          console.log("Port info:", this.port.getInfo());
+          console.log("Port readable:", !!this.port.readable);
+          console.log("Port writable:", !!this.port.writable);
+          console.log("Is connected:", this.isConnected);
+          console.log("Current baud rate:", this.currentBaudRate);
+
+          if (!this.isConnected) {
+            console.error("Not connected to display");
+            return false;
+          }
+
+          // Try sending simple test commands
+          const testCommands = [
+            "HELLO\r\n",
+            "<ID01><A>TEST<E>\r\n",
+            "\x01" + "01" + "A" + "2" + "L" + "DEBUG" + "\x04" + "\r\n",
+            "\x02" + "01" + "A1" + "CHECK" + "\x03" + "\r\n",
+          ];
+
+          for (let i = 0; i < testCommands.length; i++) {
+            try {
+              console.log(`Sending debug command ${i + 1}: "${testCommands[i]}"`);
+              const encoder = new TextEncoder();
+              const data = encoder.encode(testCommands[i]);
+              console.log(
+                "Command bytes:",
+                Array.from(data).map((b) => "0x" + b.toString(16).padStart(2, "0"))
+              );
+
+              await this.writer.write(data);
+              console.log(`Debug command ${i + 1} sent successfully`);
+
+              // Wait a bit between commands
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+            } catch (error) {
+              console.error(`Debug command ${i + 1} failed:`, error);
+            }
+          }
+
+          return true;
+        }
+      }
+
+      // Global LED display controller instance
+      const ledDisplay = new LEDDisplayController();
+    </script>
 
     <script>
       let device;
@@ -22,8 +648,177 @@
         // Disable buttons initially
         document.getElementById("print").disabled = true;
         document.getElementById("openDrawer").disabled = true;
+
+        // Initialize LED display controls
+        initializeLEDControls();
       });
 
+      // LED Display Control Functions
+      function initializeLEDControls() {
+        const ledConnectBtn = document.getElementById("ledConnect");
+        const ledDisconnectBtn = document.getElementById("ledDisconnect");
+        const ledTestBtn = document.getElementById("ledTest");
+        const ledClearBtn = document.getElementById("ledClear");
+        const ledSendBtn = document.getElementById("ledSend");
+        const ledPresetsBtn = document.getElementById("ledPresets");
+        const ledDebugBtn = document.getElementById("ledDebug");
+        const ledStatus = document.getElementById("ledStatus");
+        const ledMessage = document.getElementById("ledMessage");
+        const quickMessagesModal =
+          document.getElementById("quickMessagesModal");
+        const closeModal = document.querySelector(".close");
+
+        // Check Web Serial API support
+        if (!ledDisplay.isSerialSupported()) {
+          ledStatus.textContent =
+            "Web Serial API not supported. Please use Chrome or Edge.";
+          ledStatus.className = "disconnected";
+          ledConnectBtn.disabled = true;
+          return;
+        }
+
+        // Connect to LED Display
+        ledConnectBtn.addEventListener("click", async () => {
+          try {
+            ledStatus.textContent = "Connecting to LED display...";
+            ledStatus.className = "";
+
+            console.log("=== Starting LED Display Connection ===");
+            await ledDisplay.connect();
+
+            ledStatus.textContent = `LED Display: Connected (Baud: ${ledDisplay.currentBaudRate})`;
+            ledStatus.className = "connected";
+            ledConnectBtn.disabled = true;
+            ledDisconnectBtn.disabled = false;
+            ledTestBtn.disabled = false;
+            ledClearBtn.disabled = false;
+            ledSendBtn.disabled = false;
+            ledPresetsBtn.disabled = false;
+            ledDebugBtn.disabled = false;
+          } catch (error) {
+            console.error("LED connection failed:", error);
+            ledStatus.textContent = `Connection failed: ${error.message}`;
+            ledStatus.className = "disconnected";
+          }
+        });
+
+        // Disconnect from LED Display
+        ledDisconnectBtn.addEventListener("click", async () => {
+          try {
+            await ledDisplay.disconnect();
+
+            ledStatus.textContent = "LED Display: Not Connected";
+            ledStatus.className = "disconnected";
+            ledConnectBtn.disabled = false;
+            ledDisconnectBtn.disabled = true;
+            ledTestBtn.disabled = true;
+            ledClearBtn.disabled = true;
+            ledSendBtn.disabled = true;
+            ledPresetsBtn.disabled = true;
+            ledDebugBtn.disabled = true;
+          } catch (error) {
+            ledStatus.textContent = `Disconnect failed: ${error.message}`;
+          }
+        });
+
+        // Test LED Display
+        ledTestBtn.addEventListener("click", async () => {
+          try {
+            ledStatus.textContent = "Sending test message...";
+            await ledDisplay.testConnection();
+            ledStatus.textContent = "Test message sent successfully";
+          } catch (error) {
+            ledStatus.textContent = `Test failed: ${error.message}`;
+          }
+        });
+
+        // Clear LED Display
+        ledClearBtn.addEventListener("click", async () => {
+          try {
+            await ledDisplay.clearDisplay();
+            ledStatus.textContent = "Display cleared";
+          } catch (error) {
+            ledStatus.textContent = `Clear failed: ${error.message}`;
+          }
+        });
+
+        // Send Custom Message
+        ledSendBtn.addEventListener("click", async () => {
+          const message = ledMessage.value.trim();
+          if (!message) {
+            ledStatus.textContent = "Please enter a message";
+            return;
+          }
+
+          try {
+            const options = {
+              effect: document.getElementById("ledEffect").value,
+              speed: document.getElementById("ledSpeed").value,
+              position: document.getElementById("ledPosition").value,
+            };
+
+            await ledDisplay.sendMessage(message, options);
+            ledStatus.textContent = `Message sent: "${message}"`;
+          } catch (error) {
+            ledStatus.textContent = `Send failed: ${error.message}`;
+          }
+        });
+
+        // Show Quick Messages Modal
+        ledPresetsBtn.addEventListener("click", () => {
+          quickMessagesModal.style.display = "block";
+        });
+
+        // Close Modal
+        closeModal.addEventListener("click", () => {
+          quickMessagesModal.style.display = "none";
+        });
+
+        // Close modal when clicking outside
+        window.addEventListener("click", (event) => {
+          if (event.target === quickMessagesModal) {
+            quickMessagesModal.style.display = "none";
+          }
+        });
+
+        // Quick Message Buttons
+        document.querySelectorAll(".quick-msg").forEach((button) => {
+          button.addEventListener("click", async () => {
+            const message = button.getAttribute("data-msg");
+            try {
+              await ledDisplay.displayText(message);
+              ledStatus.textContent = `Quick message sent: "${message}"`;
+              quickMessagesModal.style.display = "none";
+            } catch (error) {
+              ledStatus.textContent = `Quick message failed: ${error.message}`;
+            }
+          });
+        });
+
+        // Enter key to send message
+        ledMessage.addEventListener("keypress", (event) => {
+          if (event.key === "Enter" && !ledSendBtn.disabled) {
+            ledSendBtn.click();
+          }
+        });
+
+        // Debug Connection
+        ledDebugBtn.addEventListener("click", async () => {
+          try {
+            ledStatus.textContent =
+              "Running debug tests... Check console (F12)";
+            console.log("=== LED Display Debug Started ===");
+            await ledDisplay.debugConnection();
+            ledStatus.textContent =
+              "Debug completed. Check browser console for details.";
+          } catch (error) {
+            ledStatus.textContent = `Debug failed: ${error.message}`;
+            console.error("Debug error:", error);
+          }
+        });
+      }
+
+      // Printer Connection Logic (existing functionality)
       document.getElementById("connect").addEventListener("click", async () => {
         try {
           // Check WebUSB support

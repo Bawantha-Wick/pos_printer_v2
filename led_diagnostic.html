@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LED Display Connection Diagnostic</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        background-color: #f5f5f5;
+      }
+      .container {
+        max-width: 800px;
+        margin: 0 auto;
+        background: white;
+        padding: 30px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+      h1,
+      h2 {
+        color: #333;
+      }
+      .status {
+        padding: 15px;
+        margin: 15px 0;
+        border-radius: 4px;
+        font-weight: bold;
+      }
+      .success {
+        background-color: #d4edda;
+        color: #155724;
+      }
+      .error {
+        background-color: #f8d7da;
+        color: #721c24;
+      }
+      .info {
+        background-color: #d1ecf1;
+        color: #0c5460;
+      }
+      .warning {
+        background-color: #fff3cd;
+        color: #856404;
+      }
+
+      button {
+        background-color: #007cba;
+        color: white;
+        border: none;
+        padding: 12px 20px;
+        margin: 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      button:hover {
+        background-color: #005a87;
+      }
+      button:disabled {
+        background-color: #ccc;
+        cursor: not-allowed;
+      }
+
+      .log {
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        padding: 15px;
+        margin: 15px 0;
+        font-family: monospace;
+        font-size: 12px;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+
+      .step {
+        margin: 20px 0;
+        padding: 15px;
+        border-left: 4px solid #007cba;
+        background-color: #f8f9fa;
+      }
+
+      input,
+      select {
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        margin: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🔧 LED Display Connection Diagnostic</h1>
+
+      <div class="step">
+        <h2>Step 1: Check Browser Support</h2>
+        <button onclick="checkBrowserSupport()">
+          Check Web Serial Support
+        </button>
+        <div id="browserStatus" class="status info">
+          Click to check browser support
+        </div>
+      </div>
+
+      <div class="step">
+        <h2>Step 2: Detect Available Serial Ports</h2>
+        <button onclick="listSerialPorts()">List Available Ports</button>
+        <div id="portsStatus" class="status info">
+          Click to list available ports
+        </div>
+      </div>
+
+      <div class="step">
+        <h2>Step 3: Connect to Device</h2>
+        <button onclick="connectToDevice()">Connect to Serial Device</button>
+        <button onclick="disconnectDevice()" disabled id="disconnectBtn">
+          Disconnect
+        </button>
+        <div id="connectionStatus" class="status info">Click to connect</div>
+      </div>
+
+      <div class="step">
+        <h2>Step 4: Test Communication</h2>
+        <input
+          type="text"
+          id="testMessage"
+          placeholder="Enter test message"
+          value="HELLO WORLD"
+        />
+        <select id="baudRate">
+          <option value="1200">1200</option>
+          <option value="2400">2400</option>
+          <option value="4800">4800</option>
+          <option value="9600" selected>9600</option>
+          <option value="19200">19200</option>
+          <option value="38400">38400</option>
+          <option value="57600">57600</option>
+          <option value="115200">115200</option>
+        </select>
+        <br />
+        <button onclick="sendTestMessage()" disabled id="sendBtn">
+          Send Test Message
+        </button>
+        <button onclick="sendRawBytes()" disabled id="rawBtn">
+          Send Raw Bytes
+        </button>
+        <button onclick="tryAllFormats()" disabled id="formatsBtn">
+          Try All Formats
+        </button>
+        <div id="testStatus" class="status info">
+          Connect first, then send test messages
+        </div>
+      </div>
+
+      <div class="step">
+        <h2>Communication Log</h2>
+        <button onclick="clearLog()">Clear Log</button>
+        <div id="log" class="log">Ready to start diagnostics...</div>
+      </div>
+    </div>
+
+    <script>
+      let port = null;
+      let writer = null;
+      let reader = null;
+
+      function log(message, type = "info") {
+        const logDiv = document.getElementById("log");
+        const timestamp = new Date().toLocaleTimeString();
+        const logEntry = `[${timestamp}] ${message}\n`;
+        logDiv.textContent += logEntry;
+        logDiv.scrollTop = logDiv.scrollHeight;
+        console.log(message);
+      }
+
+      function clearLog() {
+        document.getElementById("log").textContent = "Log cleared...\n";
+      }
+
+      function updateStatus(elementId, message, className) {
+        const element = document.getElementById(elementId);
+        element.textContent = message;
+        element.className = `status ${className}`;
+      }
+
+      async function checkBrowserSupport() {
+        log("Checking Web Serial API support...");
+
+        if ("serial" in navigator) {
+          updateStatus(
+            "browserStatus",
+            "✅ Web Serial API is supported!",
+            "success"
+          );
+          log("✅ Web Serial API is supported");
+
+          // Check if we're on HTTPS or localhost
+          const isSecure =
+            location.protocol === "https:" ||
+            location.hostname === "localhost" ||
+            location.hostname === "127.0.0.1";
+          if (isSecure) {
+            log("✅ Running on secure context (HTTPS/localhost)");
+          } else {
+            log(
+              "⚠️ WARNING: Not running on secure context. Web Serial requires HTTPS or localhost"
+            );
+            updateStatus(
+              "browserStatus",
+              "⚠️ Secure context required (HTTPS/localhost)",
+              "warning"
+            );
+          }
+        } else {
+          updateStatus(
+            "browserStatus",
+            "❌ Web Serial API not supported. Use Chrome 89+ or Edge 89+",
+            "error"
+          );
+          log("❌ Web Serial API not supported");
+        }
+      }
+
+      async function listSerialPorts() {
+        if (!("serial" in navigator)) {
+          updateStatus("portsStatus", "❌ Web Serial not supported", "error");
+          return;
+        }
+
+        try {
+          log("Getting available serial ports...");
+          const ports = await navigator.serial.getPorts();
+
+          if (ports.length === 0) {
+            updateStatus(
+              "portsStatus",
+              "No previously authorized ports found. Will prompt for device selection.",
+              "info"
+            );
+            log("No previously authorized ports found");
+          } else {
+            let portInfo = `Found ${ports.length} authorized port(s):\n`;
+            ports.forEach((port, index) => {
+              const info = port.getInfo();
+              portInfo += `Port ${index + 1}: VID=${
+                info.usbVendorId ? "0x" + info.usbVendorId.toString(16) : "N/A"
+              }, PID=${
+                info.usbProductId
+                  ? "0x" + info.usbProductId.toString(16)
+                  : "N/A"
+              }\n`;
+            });
+            updateStatus("portsStatus", portInfo, "success");
+            log(portInfo);
+          }
+        } catch (error) {
+          updateStatus("portsStatus", `❌ Error: ${error.message}`, "error");
+          log(`❌ Error getting ports: ${error.message}`);
+        }
+      }
+
+      async function connectToDevice() {
+        if (!("serial" in navigator)) {
+          updateStatus(
+            "connectionStatus",
+            "❌ Web Serial not supported",
+            "error"
+          );
+          return;
+        }
+
+        try {
+          log("Requesting serial port...");
+          updateStatus(
+            "connectionStatus",
+            "Requesting device selection...",
+            "info"
+          );
+
+          // Request port without filters to see all devices
+          port = await navigator.serial.requestPort();
+
+          const portInfo = port.getInfo();
+          log(
+            `Selected port: VID=0x${
+              portInfo.usbVendorId?.toString(16) || "unknown"
+            }, PID=0x${portInfo.usbProductId?.toString(16) || "unknown"}`
+          );
+
+          // Try to open with selected baud rate
+          const baudRate = parseInt(document.getElementById("baudRate").value);
+          log(`Opening port with baud rate: ${baudRate}`);
+
+          await port.open({
+            baudRate: baudRate,
+            dataBits: 8,
+            stopBits: 1,
+            parity: "none",
+            flowControl: "none",
+          });
+
+          writer = port.writable.getWriter();
+          reader = port.readable.getReader();
+
+          updateStatus(
+            "connectionStatus",
+            `✅ Connected! VID=0x${
+              portInfo.usbVendorId?.toString(16) || "unknown"
+            }, PID=0x${
+              portInfo.usbProductId?.toString(16) || "unknown"
+            }, Baud=${baudRate}`,
+            "success"
+          );
+          log(`✅ Successfully connected with baud rate ${baudRate}`);
+
+          // Enable test buttons
+          document.getElementById("sendBtn").disabled = false;
+          document.getElementById("rawBtn").disabled = false;
+          document.getElementById("formatsBtn").disabled = false;
+          document.getElementById("disconnectBtn").disabled = false;
+        } catch (error) {
+          updateStatus(
+            "connectionStatus",
+            `❌ Connection failed: ${error.message}`,
+            "error"
+          );
+          log(`❌ Connection failed: ${error.message}`);
+        }
+      }
+
+      async function disconnectDevice() {
+        try {
+          if (writer) {
+            await writer.releaseLock();
+            writer = null;
+          }
+          if (reader) {
+            await reader.cancel();
+            await reader.releaseLock();
+            reader = null;
+          }
+          if (port) {
+            await port.close();
+            port = null;
+          }
+
+          updateStatus("connectionStatus", "Disconnected", "info");
+          log("✅ Disconnected successfully");
+
+          // Disable test buttons
+          document.getElementById("sendBtn").disabled = true;
+          document.getElementById("rawBtn").disabled = true;
+          document.getElementById("formatsBtn").disabled = true;
+          document.getElementById("disconnectBtn").disabled = true;
+        } catch (error) {
+          updateStatus(
+            "connectionStatus",
+            `❌ Disconnect error: ${error.message}`,
+            "error"
+          );
+          log(`❌ Disconnect error: ${error.message}`);
+        }
+      }
+
+      async function sendTestMessage() {
+        if (!writer) {
+          updateStatus("testStatus", "❌ Not connected", "error");
+          return;
+        }
+
+        try {
+          const message =
+            document.getElementById("testMessage").value || "HELLO WORLD";
+          log(`Sending test message: "${message}"`);
+
+          const encoder = new TextEncoder();
+          const data = encoder.encode(message + "\r\n");
+
+          log(
+            `Sending bytes: ${Array.from(data)
+              .map((b) => "0x" + b.toString(16).padStart(2, "0"))
+              .join(" ")}`
+          );
+
+          await writer.write(data);
+
+          updateStatus("testStatus", `✅ Sent: "${message}"`, "success");
+          log(`✅ Message sent successfully`);
+        } catch (error) {
+          updateStatus(
+            "testStatus",
+            `❌ Send failed: ${error.message}`,
+            "error"
+          );
+          log(`❌ Send failed: ${error.message}`);
+        }
+      }
+
+      async function sendRawBytes() {
+        if (!writer) {
+          updateStatus("testStatus", "❌ Not connected", "error");
+          return;
+        }
+
+        try {
+          const message =
+            document.getElementById("testMessage").value || "TEST";
+
+          // Try different raw byte combinations
+          const commands = [
+            [
+              0x01,
+              0x30,
+              0x31,
+              0x41,
+              0x32,
+              0x4c,
+              ...new TextEncoder().encode(message),
+              0x04,
+              0x0d,
+              0x0a,
+            ], // SOH + 01 + A2L + message + EOT + CRLF
+            [
+              0x02,
+              0x30,
+              0x31,
+              0x41,
+              0x31,
+              ...new TextEncoder().encode(message),
+              0x03,
+              0x0d,
+              0x0a,
+            ], // STX + 01 + A1 + message + ETX + CRLF
+            [
+              0x3c,
+              0x49,
+              0x44,
+              0x30,
+              0x31,
+              0x3e,
+              0x3c,
+              0x41,
+              0x3e,
+              ...new TextEncoder().encode(message),
+              0x3c,
+              0x45,
+              0x3e,
+              0x0d,
+              0x0a,
+            ], // <ID01><A>message<E>CRLF
+            [...new TextEncoder().encode(message), 0x0d, 0x0a], // Just message + CRLF
+          ];
+
+          for (let i = 0; i < commands.length; i++) {
+            const data = new Uint8Array(commands[i]);
+            log(
+              `Sending raw command ${i + 1}: ${Array.from(data)
+                .map((b) => "0x" + b.toString(16).padStart(2, "0"))
+                .join(" ")}`
+            );
+            log(
+              `Command ${i + 1} as text: "${String.fromCharCode(...data)
+                .replace(/\r/g, "\\r")
+                .replace(/\n/g, "\\n")}"`
+            );
+
+            await writer.write(data);
+
+            // Wait between commands
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+
+          updateStatus(
+            "testStatus",
+            `✅ Sent ${commands.length} raw command formats`,
+            "success"
+          );
+          log(`✅ All raw commands sent`);
+        } catch (error) {
+          updateStatus(
+            "testStatus",
+            `❌ Raw send failed: ${error.message}`,
+            "error"
+          );
+          log(`❌ Raw send failed: ${error.message}`);
+        }
+      }
+
+      async function tryAllFormats() {
+        if (!writer) {
+          updateStatus("testStatus", "❌ Not connected", "error");
+          return;
+        }
+
+        try {
+          const message =
+            document.getElementById("testMessage").value || "TEST";
+
+          const formats = [
+            { name: "Simple Text", data: message + "\r\n" },
+            { name: "Simple Text (LF)", data: message + "\n" },
+            { name: "Simple Text (CR)", data: message + "\r" },
+            { name: "Angle Brackets", data: `<${message}>\r\n` },
+            { name: "ID01 Format", data: `<ID01><A>${message}<E>\r\n` },
+            { name: "SOH Format", data: `\x01${message}\x04\r\n` },
+            { name: "STX Format", data: `\x02${message}\x03\r\n` },
+            { name: "Complex Format", data: `\x0101A2L${message}\x04\r\n` },
+          ];
+
+          updateStatus(
+            "testStatus",
+            `Trying ${formats.length} different formats...`,
+            "info"
+          );
+
+          for (let i = 0; i < formats.length; i++) {
+            const format = formats[i];
+            log(
+              `Trying format "${format.name}": "${format.data
+                .replace(/\r/g, "\\r")
+                .replace(/\n/g, "\\n")}"`
+            );
+
+            const encoder = new TextEncoder();
+            const data = encoder.encode(format.data);
+
+            log(
+              `Bytes: ${Array.from(data)
+                .map((b) => "0x" + b.toString(16).padStart(2, "0"))
+                .join(" ")}`
+            );
+
+            await writer.write(data);
+
+            // Wait between formats
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+          }
+
+          updateStatus(
+            "testStatus",
+            `✅ Tried all ${formats.length} formats. Check your display!`,
+            "success"
+          );
+          log(`✅ All formats sent successfully`);
+        } catch (error) {
+          updateStatus(
+            "testStatus",
+            `❌ Format test failed: ${error.message}`,
+            "error"
+          );
+          log(`❌ Format test failed: ${error.message}`);
+        }
+      }
+
+      // Auto-check browser support on load
+      window.addEventListener("load", checkBrowserSupport);
+    </script>
+  </body>
+</html>
